@@ -1,0 +1,170 @@
+# https://docs.microsoft.com/azure/devops/pipelines/apps/windows/dot-net
+
+trigger:
+  batch: true
+  branches:
+    include:
+    - master
+    - develop
+    - feature/*
+    - hotfix/*
+    - release/*
+
+
+variables:
+  template: Variables/variables.yml
+  buildConfiguration: 'Release'
+
+stages:
+- stage: Commit
+  displayName: 'Commit'
+  jobs:     
+  - job: BuildAndUnitTest
+    pool:
+      vmImage: 'windows-latest'
+    displayName: Build and Unit Test
+    workspace:
+      clean: all
+    steps:
+    - checkout: self
+      clean: true
+      persistCredentials: true
+
+    - task: ChocolateyCommand@0
+      displayName: 'Install GitVersion'
+      inputs:
+        command: 'install'
+        installPackageId: 'gitversion.portable'
+
+    - task: VisualStudioTestPlatformInstaller@1
+      displayName: 'Install Visual Studio Test Platform'
+      inputs:
+        packageFeedSelector: 'nugetOrg'
+        versionSelector: 'latestStable'
+    - task: CmdLine@2
+      displayName: 'Update Versions'
+      inputs:
+        script: 'C:\ProgramData\chocolatey\bin\gitversion.exe /output buildserver /nofetch /updateassemblyinfo' 
+        workingDirectory: './'
+
+    - powershell: echo "##vso[task.setvariable variable=majorMinorPatch;isOutput=true]$(GitVersion.MajorMinorPatch)"
+      name: setMajorMinorPatch
+      displayName: 'Set MajorMinorPatch Version Variable'
+
+    - powershell: echo "##vso[task.setvariable variable=GitSemVer]$(GitVersion.FullSemVer)-$(GitVersion.ShortSha)"
+      name: setGitSemVer
+      displayName: 'Set GitSemVer Variable'
+      
+    #- script: |
+    #    git tag $(GitVersion.FullSemVer)
+    #    git push origin $(GitVersion.FullSemVer)
+    #  workingDirectory: $(Build.SourcesDirectory)
+    #  displayName: 'Add version tag to git repo'
+
+    - task: qetza.replacetokens.replacetokens-task.replacetokens@3
+      displayName: 'Replace tokens in web.config file of web project'
+      inputs:
+        rootDirectory: '$(System.DefaultWorkingDirectory)/Web'
+        targetFiles: web.config
+        encoding: auto
+        escapeType: auto
+
+    - task: qetza.replacetokens.replacetokens-task.replacetokens@3
+      displayName: 'Replace tokens in web.config file of customer portal'
+      inputs:
+        rootDirectory: '$(System.DefaultWorkingDirectory)/Portal'
+        targetFiles: web.config
+        encoding: auto
+        escapeType: auto
+
+    - task: qetza.replacetokens.replacetokens-task.replacetokens@3
+      displayName: 'Replace tokens in web.config file of portal service'
+      inputs:
+        rootDirectory: '$(System.DefaultWorkingDirectory)/PortalService'
+        targetFiles: web.config
+        encoding: auto
+        escapeType: auto
+
+    - task: qetza.replacetokens.replacetokens-task.replacetokens@3
+      displayName: 'Replace tokens in web.config file of sync service'
+      inputs:
+        rootDirectory: '$(System.DefaultWorkingDirectory)/SyncService'
+        targetFiles: web.config
+        encoding: auto
+        escapeType: auto
+ 
+    - task: qetza.replacetokens.replacetokens-task.replacetokens@3
+      displayName: 'Replace tokens in ApplicationInsights.config'
+      inputs:
+        rootDirectory: '$(System.DefaultWorkingDirectory)/Web'
+        targetFiles: ApplicationInsights.config
+        encoding: auto
+        escapeType: auto
+
+    - task: qetza.replacetokens.replacetokens-task.replacetokens@3
+      displayName: 'Replace tokens in ApplicationInsights.config'
+      inputs:
+        rootDirectory: '$(System.DefaultWorkingDirectory)/SyncService'
+        targetFiles: ApplicationInsights.config
+        encoding: auto
+        escapeType: auto
+
+    - task: qetza.replacetokens.replacetokens-task.replacetokens@3
+      displayName: 'Replace tokens in ApplicationInsights.config'
+      inputs:
+        rootDirectory: '$(System.DefaultWorkingDirectory)/Portal'
+        targetFiles: ApplicationInsights.config
+        encoding: auto
+        escapeType: auto
+
+    - task: NuGetCommand@2
+      displayName: 'Restore NuGet packages'
+      inputs:
+        command: 'restore'
+        restoreSolution: '$(solution)'
+        feedsToUse: 'config'
+        nugetConfigPath: './'
+
+    - task: VSBuild@1
+      displayName: 'Build Solution'
+      inputs:
+        solution: '$(solution)'
+        platform: '$(buildPlatform)'
+        configuration: '$(buildConfiguration)'
+        msbuildArgs: '/p:OutDir=$(Build.ArtifactStagingDirectory) /p:DeployOnBuild=$(isDeployableBranch) /p:WebPublishMethod=Package /p:PackageAsSingleFile=true /p:SkipInvalidConfigurations=true'
+        maximumCpuCount: true   
+
+    - task: UseDotNet@2 
+      displayName: ".NET Core 3.1.x"
+      inputs:
+        version: '3.1.x'
+        packageType: sdk
+    - script: dotnet build --configuration $(buildConfiguration)
+      displayName: 'dotnet build $(buildConfiguration)'
+
+    - task: DotNetCoreCLI@2
+      displayName: "Test"
+      inputs:
+        command: test
+        projects: '**/*tests/*.csproj'
+        arguments: '--configuration $(buildConfiguration)'
+
+    - task: DotNetCoreCLI@2
+      displayName: Publish
+      inputs:
+        command: publish
+        publishWebProjects: false
+        projects: '**/Demo.SeleniumTests.csproj'
+        arguments: '--configuration Release -o $(build.artifactstagingdirectory)/SeleniumTests'
+        zipAfterPublish: false
+        modifyOutputPath: false
+
+# publish all artifacts in the Artifact Stagign Directory
+# this will place the UI Test artifacts in Azure DevOps for future use in the deployment pipeline
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Artifact'
+      inputs:
+        PathtoPublish: '$(build.artifactstagingdirectory)'
+      condition: succeededOrFailed() 
+ 
+    

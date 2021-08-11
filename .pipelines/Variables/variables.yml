@@ -1,0 +1,24 @@
+variables:
+  solution: '**/*.sln'
+  buildPlatform: 'Any CPU'
+  buildConfiguration: 'Release'
+  isMaster: $[eq(variables['Build.SourceBranch'], 'refs/heads/master')]
+  isDevelop: $[eq(variables['Build.SourceBranch'], 'refs/heads/develop')]
+  isRelease: $[startsWith(variables['Build.SourceBranch'], 'refs/heads/release')]
+  isHotfix: $[startsWith(variables['Build.SourceBranch'], 'refs/heads/hotfix')]
+  ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/master') }}:
+    deployEnvironment: master
+    dbName: 'KineticMaster'    
+  ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/develop') }}:
+    deployEnvironment: develop
+    dbName: 'KineticDevelop'    
+  ${{ if startsWith(variables['Build.SourceBranch'], 'refs/heads/release') }}:
+    deployEnvironment: release
+    dbName: 'KineticRelease'    
+  ${{ if startsWith(variables['Build.SourceBranch'], 'refs/heads/hotfix') }}:
+    deployEnvironment: hotfix
+    dbName: 'KineticHotfix'    
+  isDeployableBranch: $[or(eq(variables.isMaster, true), eq(variables.isDevelop, true), eq(variables.isRelease, true), eq(variables.isHotfix, true))]
+  GitSemVer: '1.0.0'
+  connectionString: 'data source=MOTIONDS04;initial catalog=$(dbName);User Id=KineticLocalEnvironments; Password=#Rxgq34TsXCRB!zF;MultipleActiveResultSets=True;App=Kinetic'
+  applicationInsightsInstrumentationKey: e9704c51-ae51-4aff-a9a8-0a8fb5d82516
