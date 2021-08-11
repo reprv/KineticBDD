@@ -1,0 +1,10 @@
+﻿Scenario Outline: Login permutations
+	Given the username is <Username>
+	And the password is <Password>
+	When the login button is clicked
+	Then the result should be <Expected result>
+
+Examples:
+	| Username | Password | Expected result |
+	| motion            | TransformWork             |                |
+	| motion4           | TransformWork         | Invalid username or password.               |
