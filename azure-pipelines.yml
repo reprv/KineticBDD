@@ -41,3 +41,7 @@ steps:
       !**\*TestAdapter.dll
       !**\obj\**
 
+- task: DotNetCoreCLI@2
+  inputs:
+    command: 'test'
+
