@@ -1,39 +1,43 @@
+# any commit to the master branch will trigger the CI build
 trigger:
-- main
+- master
 
+# use a Windows agent with VS to build the .NET Core MSTest project
+# you can replace this with Ubuntu too without changing the tasks
 pool:
-  vmImage: 'ubuntu-latest'
-
-variables:
-  buildConfiguration: 'Release'
+  name: Hosted Windows 2019 with VS2019
 
 steps:
+# install the required .NET Core SDK version
+# only necessary if the agent doesn't already have the required SDK
+- task: DotNetCoreInstaller@0
+  displayName: 'Use .NET Core sdk 3.1'
+  inputs:
+    version: 3.1
 
-    - task: UseDotNet@2 
-      displayName: ".NET Core 3.1.x"
-      inputs:
-        version: '3.1.x'
-        packageType: sdk
-    - script: dotnet build --configuration $(buildConfiguration)
-      displayName: 'dotnet build $(buildConfiguration)'
+# restore Nuget packages/dependencies
+- task: DotNetCoreCLI@2
+  displayName: test
+  inputs:
+    command: test
+    projects: '**/KineticAutomation.Specs.csproj'
 
-    - task: DotNetCoreCLI@2
-      displayName: "Test"
-      inputs:
-        command: test
-        projects: '**/*tests/*.csproj'
-        arguments: '--configuration $(buildConfiguration)'
+# publish the UI test project to the SeleliumTest subfolder in the Artifact Staging Directory
+# optionally, you can add more steps to publish your own website alongside your SeleniumTests in another task
+- task: DotNetCoreCLI@2
+  displayName: Publish
+  inputs:
+    command: publish
+    publishWebProjects: false
+    projects: '**/KineticAutomation.Specs.csproj'
+    arguments: '--configuration Release -o $(build.artifactstagingdirectory)/SeleniumTests'
+    zipAfterPublish: false
+    modifyOutputPath: false
 
-    - task: DotNetCoreCLI@2
-      displayName: "Publish"
-      inputs:
-        command: 'publish'
-        publishWebProjects: true
-        arguments: '-r linux-x64 --configuration $(BuildConfiguration) --output $(Build.ArtifactStagingDirectory)'
-        zipAfterPublish: true
-
-    - task: PublishBuildArtifacts@1
-      displayName: "Upload Artifacts"
-      inputs:
-        pathtoPublish: '$(Build.ArtifactStagingDirectory)' 
-        artifactName: 'hanselminutes' 
+# publish all artifacts in the Artifact Stagign Directory
+# this will place the UI Test artifacts in Azure DevOps for future use in the deployment pipeline
+- task: PublishBuildArtifacts@1
+  displayName: 'Publish Artifact'
+  inputs:
+    PathtoPublish: '$(build.artifactstagingdirectory)'
+  condition: succeededOrFailed()
